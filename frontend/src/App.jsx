@@ -461,7 +461,7 @@ export default function App() {
                   <strong>{result.status}</strong>
                   <p>{(result.type ?? "unknown").toUpperCase()} analysis</p>
                 </div>
-                <DetailMetric label="Concern Score" value={percent(result.signal_score)} tone={tone} />
+                    <DetailMetric label="Concern Score" value={percent(result.signal_score)} tone={tone} />
                 <DetailMetric label="Confidence" value={percent(result.confidence)} tone={tone} />
               </section>
 
