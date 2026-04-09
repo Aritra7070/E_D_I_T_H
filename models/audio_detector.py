@@ -78,14 +78,16 @@ def _load_whisper() -> None:
         print(f"[AudioDetector] Whisper load failed (will skip transcription): {type(e).__name__}: {e}")
 
 
-def load_audio(audio_path: str, target_sr: int = 22050):
+def load_audio(audio_path: str, target_sr: int = 22050) -> tuple[np.ndarray, int, str | None]:
     """
     Load audio with broad format support.
     
     Native formats (WAV, FLAC, AIFF) are loaded directly via librosa.
     Compressed formats (M4A, MP3, AAC, OGG, OPUS) require FFmpeg + pydub for transcoding.
     
-    Returns (waveform, sample_rate) or raises RuntimeError with helpful diagnostics.
+    Returns (waveform, sample_rate, temp_wav_path_or_none).
+    If a temporary WAV was created (for M4A/MP3 etc), its path is returned so caller can reuse it.
+    Caller is responsible for cleaning up temp files.
     """
     import tempfile
     from pathlib import Path
@@ -99,7 +101,7 @@ def load_audio(audio_path: str, target_sr: int = 22050):
     if ext in direct_formats:
         try:
             waveform, sr = librosa.load(audio_path, sr=target_sr, mono=True)
-            return waveform, sr
+            return waveform, sr, None  # No temp file created
         except Exception as e:
             raise RuntimeError(f"Failed to load {ext} file: {e}") from e
 
@@ -137,20 +139,15 @@ def load_audio(audio_path: str, target_sr: int = 22050):
             print(f"[AudioDetector] Attempting to transcode {ext} -> WAV via pydub+FFmpeg")
             audio_segment = AudioSegment.from_file(audio_path)
             
-            # Export to temporary WAV file
+            # Export to temporary WAV file (CALLER will clean up)
             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             tmp_path = tmp.name
             tmp.close()
             
-            try:
-                audio_segment.export(tmp_path, format="wav")
-                waveform, sr = librosa.load(tmp_path, sr=target_sr, mono=True)
-                print(f"[AudioDetector] Successfully transcoded {ext}: {len(waveform)} samples @ {sr}Hz")
-                return waveform, sr
-            finally:
-                # Clean up temp file
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
+            audio_segment.export(tmp_path, format="wav")
+            waveform, sr = librosa.load(tmp_path, sr=target_sr, mono=True)
+            print(f"[AudioDetector] Successfully transcoded {ext}: {len(waveform)} samples @ {sr}Hz")
+            return waveform, sr, tmp_path  # Return path for Whisper to reuse
         
         except FileNotFoundError as e:
             # This typically means FFmpeg is not installed/found
@@ -387,24 +384,24 @@ class AudioDetector:
             print(f"[AudioDetector] Transcription failed: {type(e).__name__}: {e}")
             return None
     
-    def verify_transcript_claim(self, transcript: str) -> tuple[float, list[str]]:
-        """Verify transcript claims using TextDetector (DDGS search)."""
+    def verify_transcript_claim(self, transcript: str) -> DetectorResult | None:
+        """
+        Run the transcript through the full TextDetector algorithm.
+        Returns the complete TextDetector result (same as if user pasted text).
+        """
         if not transcript or len(transcript) < 10:
-            return 0.5, ["Transcript too short to verify"]
+            return None
         
         try:
             text_detector = TextDetector()
             result = text_detector.analyze(transcript)
-            
-            # Extract score and reason labels from the DetectorResult
-            claim_score = result.fake_score
-            claim_reasons = result.details.get("reason_labels", [])[:2]
-            
-            return claim_score, claim_reasons
+            print(f"[AudioDetector] Text analysis complete - Status: {result.details.get('status_override', 'Unknown')}")
+            return result
         
         except Exception as e:
-            print(f"[AudioDetector] Claim verification failed: {e}")
-            return 0.5, ["Claim verification unavailable"]
+            print(f"[AudioDetector] Text analysis failed: {e}")
+            return None
+    
     
     def analyze(self, file_path: str) -> DetectorResult:
         """
@@ -440,122 +437,131 @@ class AudioDetector:
     
     def _analyze_internal(self, file_path: str) -> DetectorResult:
         """Internal analysis logic (may raise exceptions; wrapped by analyze())."""
-        # Load audio
+        import os
+        
+        temp_wav_path = None  # Track temp file for cleanup
+        
         try:
-            waveform, sr = load_audio(file_path, target_sr=16000)
-            print(f"[AudioDetector] Audio loaded: {len(waveform)} samples @ {sr}Hz")
-        except RuntimeError as exc:
+            # Load audio (may create a temporary WAV for compressed formats)
+            try:
+                waveform, sr, temp_wav_path = load_audio(file_path, target_sr=16000)
+                print(f"[AudioDetector] Audio loaded: {len(waveform)} samples @ {sr}Hz")
+            except RuntimeError as exc:
+                return DetectorResult(
+                    fake_score=0.5,
+                    confidence=0.4,
+                    explanation=f"Audio could not be loaded: {str(exc)}",
+                    details={
+                        "error": str(exc),
+                        "model_backend": "unavailable",
+                        "reason_labels": ["Audio format not supported or FFmpeg not available"],
+                    },
+                    component_scores={},
+                )
+            
+            if waveform.size == 0:
+                raise ValueError("Audio file is empty or cannot be loaded")
+            
+            # Score voice authenticity
+            print("[AudioDetector] Scoring voice authenticity...")
+            voice_score, voice_method = self.score_voice_authenticity(waveform, sr)
+            print(f"[AudioDetector] Voice score: {voice_score:.4f} (method: {voice_method})")
+            
+            # Transcribe audio using the converted WAV if available, otherwise original file
+            transcription_path = temp_wav_path if temp_wav_path else file_path
+            print("[AudioDetector] Transcribing audio...")
+            transcript = self.transcribe_audio(transcription_path)
+            if transcript:
+                print(f"[AudioDetector] Transcript: {transcript[:100]}...")
+            else:
+                print("[AudioDetector] No transcript generated")
+            
+            # Run transcript through TextDetector (same algorithm as text input)
+            text_result = None
+            if transcript:
+                print("[AudioDetector] Running transcript through text analysis...")
+                text_result = self.verify_transcript_claim(transcript)
+            
+            # Prepare final result
+            if text_result:
+                # Use TextDetector results as base, enhanced with voice analysis
+                text_status = text_result.details.get("status_override", "Suspicious")
+                text_score = text_result.fake_score
+                text_confidence = text_result.confidence
+                text_explanation = text_result.explanation
+                text_evidence = text_result.details.get("reason_labels", [])
+                
+                # Combine voice + text scores (60% text credibility + 40% voice authenticity)
+                combined_score = calibrate_score(text_score * 0.6 + voice_score * 0.4)
+                combined_confidence = clamp((text_confidence * 0.7 + text_confidence * 0.3), 0.4, 0.95)
+                
+                # Build combined explanation
+                combined_explanation = (
+                    f"Audio contains: {transcript[:80]}... "
+                    f"[Voice: {'natural' if voice_score < 0.35 else 'AI-like' if voice_score > 0.65 else 'mixed'}] "
+                    f"{text_explanation}"
+                )
+                
+                # Build combined reason labels
+                reason_labels = list(text_evidence)  # Use all text evidence
+                if voice_score > 0.65:
+                    reason_labels.insert(0, "Voice patterns suggest AI generation")
+                if voice_score < 0.35:
+                    reason_labels.insert(0, "Voice patterns appear natural")
+                
+                final_status = text_status  # Use text status, not voice status
+                final_score = combined_score
+                final_confidence = combined_confidence
+                final_explanation = combined_explanation
+                
+                component_scores = {
+                    "voice_authenticity_score": voice_score,
+                    "text_credibility_score": text_score,
+                }
+            else:
+                # Fallback: only voice analysis (no transcript)
+                final_score = calibrate_score(voice_score)
+                final_confidence = clamp(0.5 + abs(voice_score - 0.5) * 0.9, 0.4, 0.95)
+                final_explanation = (
+                    f"Audio analysis: Voice patterns "
+                    f"{'suggest AI-generated speech' if voice_score > 0.65 else 'appear natural' if voice_score < 0.35 else 'show mixed signals'}. "
+                    f"Unable to verify spoken claims without transcription."
+                )
+                reason_labels = ["Transcription unavailable - voice analysis only"]
+                final_status = "Unverified"
+                component_scores = {
+                    "voice_authenticity_score": voice_score,
+                }
+            
+            print(f"[AudioDetector] Final score: {final_score:.4f}, Status: {final_status}")
+            print(f"[AudioDetector] Analysis complete")
+            
+            model_backend = f"voice:{voice_method} + whisper-small + TextDetector (DDGS)"
+            
+            # Build details dictionary for frontend
+            details = {
+                "model_backend": model_backend,
+                "status_override": final_status,
+                "reason_labels": reason_labels[:6],
+                "transcript": transcript,
+                "spectrogram_image": build_spectrogram_image(waveform, sr),
+                "voice_authenticity_score": voice_score,
+                "voice_detection_method": voice_method,
+            }
+            
             return DetectorResult(
-                fake_score=0.5,
-                confidence=0.4,
-                explanation=f"Audio could not be loaded: {str(exc)}",
-                details={
-                    "error": str(exc),
-                    "model_backend": "unavailable",
-                    "reason_labels": ["Audio format not supported or FFmpeg not available"],
-                },
-                component_scores={},
+                fake_score=final_score,
+                confidence=final_confidence,
+                explanation=final_explanation,
+                details=details,
+                component_scores=component_scores,
             )
         
-        if waveform.size == 0:
-            raise ValueError("Audio file is empty or cannot be loaded")
-        
-        # Score voice authenticity
-        print("[AudioDetector] Scoring voice authenticity...")
-        voice_score, voice_method = self.score_voice_authenticity(waveform, sr)
-        print(f"[AudioDetector] Voice score: {voice_score:.4f} (method: {voice_method})")
-        
-        # Transcribe audio
-        print("[AudioDetector] Transcribing audio...")
-        transcript = self.transcribe_audio(file_path)
-        if transcript:
-            print(f"[AudioDetector] Transcript: {transcript[:100]}...")
-        else:
-            print("[AudioDetector] No transcript generated")
-        
-        # Verify transcript claims if available
-        claim_score = None
-        claim_reasons = []
-        
-        if transcript:
-            print("[AudioDetector] Verifying transcript claims...")
-            claim_score, claim_reasons = self.verify_transcript_claim(transcript)
-            print(f"[AudioDetector] Claim score: {claim_score:.4f}")
-            final_score = calibrate_score(voice_score * 0.5 + claim_score * 0.5)
-        else:
-            final_score = calibrate_score(voice_score)
-            claim_reasons = ["Speech-to-text transcription unavailable"]
-        
-        print(f"[AudioDetector] Final score: {final_score:.4f}")
-        
-        # Build component scores
-        component_scores = {
-            "voice_authenticity_score": voice_score,
-            "voice_detection_method": voice_method,
-        }
-        if claim_score is not None:
-            component_scores["claim_verification_score"] = claim_score
-        
-        # Build reason labels
-        reason_labels = []
-        
-        if voice_score > 0.65:
-            reason_labels.append("Voice patterns suggest AI-generated speech")
-        if voice_score < 0.35:
-            reason_labels.append("Voice patterns appear natural and human")
-        
-        if transcript:
-            truncated = transcript[:120] if len(transcript) > 120 else transcript
-            reason_labels.append(f'Transcript: "{truncated}..."')
-        
-        reason_labels.extend(claim_reasons)
-        
-        if claim_score is not None:
-            if claim_score > 0.6 and transcript:
-                reason_labels.append("Spoken claims not corroborated by credible sources")
-            elif claim_score < 0.35 and transcript:
-                reason_labels.append("Spoken claims appear consistent with credible sources")
-        
-        # Build explanation
-        if final_score >= 0.68:
-            explanation = (
-                "Voice analysis detects characteristics consistent with AI-generated or heavily processed audio. "
-                + (f"Spoken claims: not corroborated." if claim_score and claim_score > 0.6 else "")
-            )
-        elif final_score < 0.34:
-            explanation = (
-                "Voice patterns and spectral features are consistent with natural human speech. "
-                + (f"Spoken claims appear credible." if claim_score and claim_score < 0.35 else "")
-            )
-        else:
-            explanation = (
-                "Audio shows mixed signals. Some features resemble synthetic speech, but evidence is uncertain."
-            )
-        
-        # Confidence
-        confidence = clamp(0.5 + abs(final_score - 0.5) * 0.9, 0.4, 0.95)
-        
-        model_backend = f"voice:{voice_method} + whisper-small + DDGS"
-        
-        # Build details dictionary for frontend
-        details = {
-            "model_backend": model_backend,
-            "status_override": None,
-            "reason_labels": reason_labels[:6],
-            "transcript": transcript,
-            "spectrogram_image": build_spectrogram_image(waveform, sr),
-            "voice_authenticity_score": voice_score,
-            "voice_detection_method": voice_method,
-        }
-        
-        if claim_score is not None:
-            details["claim_verification_score"] = claim_score
-        
-        print("[AudioDetector] Analysis complete")
-        return DetectorResult(
-            fake_score=final_score,
-            confidence=confidence,
-            explanation=explanation,
-            details=details,
-            component_scores=component_scores,
-        )
+        finally:
+            # Clean up temporary WAV file if it was created
+            if temp_wav_path and os.path.exists(temp_wav_path):
+                try:
+                    os.unlink(temp_wav_path)
+                    print(f"[AudioDetector] Cleaned up temp file: {temp_wav_path}")
+                except Exception as e:
+                    print(f"[AudioDetector] Failed to clean up temp file: {e}")

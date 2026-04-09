@@ -309,7 +309,58 @@ export default function App() {
                     <span>{loading ? "Analyzing..." : "Analyze Now"}</span>
                   </motion.button>
                 </div>
-              </form>
+                <DetailMetric label="Concern Score" value={percent(result.signal_score)} tone={tone} />
+                <DetailMetric label="Confidence" value={percent(result.confidence)} tone={tone} />
+              </section>
+
+              <section className={`result-section explanation-box explanation-box--${tone}`}>
+                <div className="section-heading">
+                  <h3>Why EDITH Said This</h3>
+                  <span>{result.details?.explainability?.mode ?? "summary"}</span>
+                </div>
+                <p className="explanation-copy">{result.explanation}</p>
+              </section>
+
+              <EvidenceSection evidence={result.evidence} tone={tone} />
+
+              <section className="result-section">
+                <div className="section-heading">
+                  <h3>Confidence</h3>
+                  <span>{percent(result.confidence)}</span>
+                </div>
+                <div className="meter-track">
+                  <div className={`meter-fill meter-fill--${tone}`} style={{ width: percent(result.confidence) }} />
+                </div>
+              </section>
+
+              <section className="result-section">
+                <div className="section-heading">
+                  <h3>Concern Score</h3>
+                  <span>{percent(result.signal_score)}</span>
+                </div>
+                <div className="meter-track">
+                  <div className={`meter-fill meter-fill--${tone}`} style={{ width: percent(result.signal_score) }} />
+                </div>
+              </section>
+
+              <MediaPanel result={result} />
+
+              <section className="result-section">
+                <div className="section-heading">
+                  <h3>Signal Breakdown</h3>
+                  <span>{result.status}</span>
+                </div>
+                <div className="metrics-grid">
+                  {Object.entries(result.details?.component_scores ?? {}).map(([key, value]) => (
+                    <DetailMetric
+                      key={key}
+                      label={key.replaceAll("_", " ")}
+                      value={percent(value)}
+                      tone={value >= 0.68 ? "manipulated" : value >= 0.34 ? "suspicious" : "authentic"}
+                    />
+                  ))}
+                </div>
+              </section>
             </div>
           </motion.section>
 
