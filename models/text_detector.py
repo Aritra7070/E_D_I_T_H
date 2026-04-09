@@ -39,6 +39,31 @@ EMOTIONAL_WORDS = {
     "crisis",
 }
 
+GENERIC_NEWS_TOKENS = {
+    "media",
+    "advisory",
+    "match",
+    "news",
+    "report",
+    "reported",
+    "reports",
+    "according",
+    "published",
+    "announced",
+    "official",
+    "officials",
+    "season",
+    "article",
+    "code",
+    "conduct",
+    "league",
+    "premier",
+    "indian",
+    "tata",
+    "stadium",
+    "captain",
+}
+
 STOPWORDS = {
     "the",
     "a",
@@ -63,11 +88,21 @@ STOPWORDS = {
     "from",
     "as",
     "be",
+    "been",
     "before",
     "after",
+    "during",
+    "against",
+    "his",
+    "her",
+    "its",
+    "no",
+    "our",
     "they",
     "their",
     "them",
+    "team",
+    "teams",
     "has",
     "have",
     "had",
@@ -93,6 +128,28 @@ TRUSTED_DOMAIN_SCORES = {
     "abcnews.go.com": 0.8,
     "cbsnews.com": 0.8,
     "nbcnews.com": 0.8,
+    "bcci.tv": 0.94,
+    "iplt20.com": 0.94,
+    "espncricinfo.com": 0.9,
+    "cricbuzz.com": 0.86,
+    "thehindu.com": 0.85,
+    "indianexpress.com": 0.84,
+    "hindustantimes.com": 0.79,
+    "ndtv.com": 0.78,
+}
+
+TRUSTED_SOURCE_SCORES = {
+    "associated press": 0.95,
+    "reuters": 0.96,
+    "bbc": 0.92,
+    "indian premier league official website": 0.94,
+    "ipl": 0.92,
+    "sportstar": 0.86,
+    "espncricinfo": 0.9,
+    "cricbuzz": 0.86,
+    "india today": 0.8,
+    "the hindu": 0.85,
+    "ndtv": 0.78,
 }
 
 
@@ -106,38 +163,107 @@ class TextDetector:
             return default
         return min(1.0, max(0.0, numerator / denominator))
 
+    def _normalize_text(self, text: str) -> str:
+        normalized = text.replace("\u2019", "'").replace("\u2018", "'").replace("\u201c", '"').replace("\u201d", '"')
+        normalized = re.sub(r"\bNo\.\s+(?=\d)", "No ", normalized)
+        normalized = re.sub(r"(?<=[.!?])(?=[A-Z])", " ", normalized)
+        normalized = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", normalized)
+        normalized = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", normalized)
+        normalized = re.sub(r"(?<=\d)(?=[A-Za-z])", " ", normalized)
+        normalized = re.sub(r"(?<=[A-Za-z])(?=\d)", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized)
+        return normalized.strip()
+
+    def _clean_claim_sentence(self, sentence: str) -> str:
+        cleaned = sentence.strip(" -")
+        for pattern in [
+            r"^(?:[A-Z]{2,}(?:\s+[A-Z]{2,}){1,5}\s+)",
+            r"^(?:[A-Z][a-z]+\s+\d{1,2},\s+\d{4}\s+)",
+            r"^(?:\d{1,2},\s+\d{4}\s+)",
+            r"^(?:Match\s+\d+,\s*[A-Z]{1,5}\s+vs\s+[A-Z]{1,5}\s*-\s*)",
+            r"^(?:Code of Conduct\s+)",
+        ]:
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip(" -")
+        return cleaned or sentence.strip()
+
     def _extract_claim(self, text: str) -> str:
-        sentences = [segment.strip() for segment in re.split(r"(?<=[.!?])\s+", text) if segment.strip()]
+        normalized_text = self._normalize_text(text)
+        sentences = [segment.strip(" -") for segment in re.split(r"(?<=[.!?])\s+", normalized_text) if segment.strip()]
         if not sentences:
-            return text.strip()
+            return normalized_text.strip()
 
         def claim_score(sentence: str) -> float:
             lowered = sentence.lower()
-            number_bonus = 0.25 if re.search(r"\d", sentence) else 0.0
-            source_bonus = sum(lowered.count(token) for token in ["said", "reported", "according", "confirmed", "published", "announced"]) * 0.12
+            tokens = sentence.split()
+            number_bonus = 0.22 if re.search(r"\d", sentence) else 0.0
+            source_bonus = sum(
+                lowered.count(token)
+                for token in ["said", "reported", "according", "confirmed", "published", "announced", "fined", "denied", "won"]
+            ) * 0.12
+            entity_bonus = min(len(re.findall(r"\b(?:[A-Z][a-z]+|[A-Z]{2,5})\b", sentence)) * 0.06, 0.3)
+            verb_bonus = 0.16 if re.search(r"\b(is|are|was|were|has|have|had|said|fined|won|lost|confirmed|announced|reported)\b", lowered) else 0.0
             uppercase_penalty = min(sum(1 for word in sentence.split() if len(word) > 3 and word.isupper()) * 0.06, 0.3)
-            return (len(sentence.split()) * 0.03) + number_bonus + source_bonus - uppercase_penalty
+            header_penalty = 0.2 if lowered.startswith(("media advisory", "press release", "match ")) else 0.0
+            subordinate_penalty = 0.18 if lowered.startswith(("as ", "after ", "because ", "while ", "when ")) else 0.0
+            short_penalty = 0.12 if len(tokens) < 8 else 0.0
+            return (len(tokens) * 0.03) + number_bonus + source_bonus + entity_bonus + verb_bonus - uppercase_penalty - header_penalty - subordinate_penalty - short_penalty
 
-        return max(sentences, key=claim_score)
+        return self._clean_claim_sentence(max(sentences, key=claim_score))
 
     def _tokenize(self, text: str) -> list[str]:
         return [token for token in re.findall(r"[a-zA-Z0-9']+", text.lower()) if token not in STOPWORDS]
 
     def _build_query(self, claim: str) -> str:
-        claim_tokens = []
-        for token in self._tokenize(claim):
-            if token not in claim_tokens:
-                claim_tokens.append(token)
-            if len(claim_tokens) >= 10:
+        normalized_claim = self._normalize_text(claim)
+        if len(normalized_claim.split()) <= 14:
+            return normalized_claim[:140]
+
+        named_terms: list[str] = []
+        for match in re.finditer(r"\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[A-Z]{2,5})\b", normalized_claim):
+            term = re.sub(r"^(?:Captain|Match)\s+", "", match.group(0).strip(), flags=re.IGNORECASE)
+            lowered = term.lower()
+            term_tokens = [token.lower() for token in re.findall(r"[A-Za-z]+", term)]
+            if not term_tokens:
+                continue
+            if (
+                lowered in GENERIC_NEWS_TOKENS
+                or lowered in STOPWORDS
+                or all(token in GENERIC_NEWS_TOKENS or token in STOPWORDS for token in term_tokens)
+                or term in named_terms
+            ):
+                continue
+            named_terms.append(term)
+            if len(named_terms) >= 5:
                 break
 
-        if not claim_tokens:
-            return claim[:120]
+        named_term_tokens = {
+            token.lower()
+            for term in named_terms
+            for token in re.findall(r"[A-Za-z]+", term)
+        }
+        keyword_terms: list[str] = []
+        for token in self._tokenize(normalized_claim):
+            if token in GENERIC_NEWS_TOKENS or token in named_term_tokens or len(token) <= 2:
+                continue
+            if token not in keyword_terms:
+                keyword_terms.append(token)
+            if len(keyword_terms) >= 6:
+                break
 
-        if len(claim.split()) <= 14:
-            return claim
+        number_terms = re.findall(r"\d+(?:\.\d+)?", normalized_claim)[:3]
+        query_terms = named_terms + keyword_terms + number_terms
+        deduped_terms: list[str] = []
+        seen_terms: set[str] = set()
+        for term in query_terms:
+            term_key = term.lower()
+            if term_key in seen_terms:
+                continue
+            deduped_terms.append(term)
+            seen_terms.add(term_key)
 
-        return " ".join(claim_tokens)
+        if deduped_terms:
+            return " ".join(deduped_terms[:10])
+        return normalized_claim[:140]
 
     def _highlight_terms(self, text: str) -> list[dict[str, object]]:
         highlights: list[dict[str, object]] = []
@@ -191,6 +317,11 @@ class TextDetector:
 
         return domain, 0.45
 
+    def _source_trust(self, source_name: str, domain: str, domain_trust: float) -> float:
+        source_key = source_name.strip().lower()
+        source_trust = TRUSTED_SOURCE_SCORES.get(source_key, 0.0)
+        return max(domain_trust, source_trust)
+
     def _search_web(self, query: str, max_results: int = 5) -> list[dict]:
         """
         Search the web via DuckDuckGo. Returns empty list on any failure.
@@ -214,47 +345,81 @@ class TextDetector:
             results = []
         return results
 
+    def _search_news(self, query: str, max_results: int = 5) -> list[dict]:
+        results: list[dict] = []
+        try:
+            with DDGS(timeout=15) as ddgs:
+                for row in ddgs.news(query, region="us-en", safesearch="moderate", max_results=max_results):
+                    results.append(row)
+        except TypeError:
+            try:
+                ddgs = DDGS(timeout=15)
+                for row in ddgs.news(query, region="us-en", safesearch="moderate", max_results=max_results):
+                    results.append(row)
+            except Exception as exc:
+                print(f"[TextDetector] News search failed (non-fatal): {exc}")
+                results = []
+        except Exception as exc:
+            print(f"[TextDetector] News search failed (non-fatal): {exc}")
+            results = []
+        return results
+
     def _search_related_articles(self, query: str, claim: str) -> tuple[list[dict[str, object]], str | None]:
         claim_tokens = set(self._tokenize(claim))
         claim_numbers = set(re.findall(r"\d+(?:\.\d+)?", claim))
         results: list[dict[str, object]] = []
 
         # Build multiple query variations for better resilience
-        search_queries: list[str] = [query]
+        search_queries: list[str] = []
+        for candidate in [query, f"\"{claim[:140]}\""]:
+            candidate = candidate.strip()
+            if candidate and candidate not in search_queries:
+                search_queries.append(candidate)
         shortened_query = " ".join(query.split()[:6]).strip()
         if shortened_query and shortened_query not in search_queries:
             search_queries.append(shortened_query)
         # Entity-focused: pick capitalized proper nouns + key verbs
-        proper_nouns = re.findall(r"\b[A-Z][a-z]{2,}\b", claim)
+        proper_nouns = re.findall(r"\b(?:[A-Z][a-z]{2,}|[A-Z]{2,5})\b", claim)
         if len(proper_nouns) >= 2:
-            entity_query = " ".join(dict.fromkeys(proper_nouns[:5]))
+            entity_query = " ".join(dict.fromkeys(proper_nouns[:6]))
             if entity_query not in search_queries:
                 search_queries.append(entity_query)
+        keyword_query = " ".join(self._build_query(claim).split()[:8]).strip()
+        if keyword_query and keyword_query not in search_queries:
+            search_queries.append(keyword_query)
 
         raw_results: list[dict] = []
         last_error: str | None = None
         MAX_RETRIES = 3
 
+        news_results = self._search_news(query, max_results=5)
+        if news_results:
+            raw_results = news_results
+
         for attempt in range(MAX_RETRIES):
+            if raw_results:
+                break
             if attempt > 0:
                 time.sleep(1.5)  # breathing room for rate limits
 
+            aggregated_rows: list[dict] = []
+            seen_hrefs: set[str] = set()
             for search_query in search_queries:
-                original_warn = warnings.warn
-                warnings.warn = lambda *args, **kwargs: None
                 try:
-                    search_client = DDGS(timeout=15)
-                finally:
-                    warnings.warn = original_warn
-
-                try:
-                    raw_results = self._search_web(search_query, max_results=5)
-                    if raw_results:
+                    batch_results = self._search_web(search_query, max_results=5)
+                    for row in batch_results:
+                        href = str(row.get("href", row.get("url", ""))).strip()
+                        if not href or href in seen_hrefs:
+                            continue
+                        aggregated_rows.append(row)
+                        seen_hrefs.add(href)
+                    if len(aggregated_rows) >= 8:
                         break
                 except Exception as exc:
                     last_error = str(exc)
 
-            if raw_results:
+            if aggregated_rows:
+                raw_results = aggregated_rows
                 break
 
         if not raw_results and last_error:
@@ -269,6 +434,7 @@ class TextDetector:
 
             domain, trust = self._domain_trust(href)
             source_name = str(row.get("source") or domain)
+            trust = self._source_trust(source_name, domain, trust)
             article_text = " ".join(part for part in [title, snippet, href] if part)
             article_tokens = set(self._tokenize(article_text))
             overlap = claim_tokens & article_tokens
@@ -324,7 +490,7 @@ class TextDetector:
             )
 
     def _analyze_internal(self, text: str) -> DetectorResult:
-        cleaned_text = " ".join(text.split())
+        cleaned_text = self._normalize_text(text)
         if not cleaned_text:
             raise ValueError("Text input is empty.")
 
@@ -336,7 +502,7 @@ class TextDetector:
 
         clickbait_signal = clamp(sum(1 for token in tokens if token in CLICKBAIT_WORDS) / 3.0)
         emotional_signal = clamp(sum(1 for token in tokens if token in EMOTIONAL_WORDS) / 3.0)
-        uppercase_signal = clamp(sum(1 for word in cleaned_text.split() if len(word) > 3 and word.isupper()) / 5.0)
+        uppercase_signal = clamp(sum(1 for word in claim.split() if len(word) > 4 and word.isupper()) / 6.0)
         punctuation_signal = clamp((cleaned_text.count("!") + cleaned_text.count("?")) / 6.0)
         pressure_signal = clamp((clickbait_signal * 0.45) + (emotional_signal * 0.25) + (uppercase_signal * 0.2) + (punctuation_signal * 0.1))
 
@@ -347,6 +513,9 @@ class TextDetector:
         unique_strong_sources = {str(article["source"]) for article in strong_matches}
         average_match = sum(float(article["match_score"]) for article in related_articles) / len(related_articles) if related_articles else 0.0
         average_trust = sum(float(article["trust"]) for article in related_articles) / len(related_articles) if related_articles else 0.0
+        best_match = max((float(article["match_score"]) for article in related_articles), default=0.0)
+        best_trust = max((float(article["trust"]) for article in related_articles), default=0.0)
+        official_or_high_confidence_support = best_match >= 0.62 and best_trust >= 0.88
 
         # --- NEW: Claim coverage and contradiction analysis ---
         claim_coverage = self._claim_coverage(claim, related_articles)
@@ -407,6 +576,8 @@ class TextDetector:
                 evidence.append(f"Contradicted by: {source}")
         elif len(strong_matches) >= 2 and len(unique_strong_sources) >= 2:
             evidence.append("Multiple independent sources confirm the claim")
+        elif official_or_high_confidence_support and claim_found:
+            evidence.append("A highly relevant trusted source supports the claim")
         elif strong_matches:
             evidence.append("Only one strong source match was found")
         elif moderate_matches:
@@ -445,6 +616,12 @@ class TextDetector:
         ):
             status = "Authentic Signals"
             signal_score = calibrate_score(0.16 + (pressure_signal * 0.14) + max(0.0, 0.18 - average_match * 0.2))
+        elif official_or_high_confidence_support and claim_coverage >= 0.45 and pressure_signal < 0.22:
+            status = "Authentic Signals"
+            signal_score = calibrate_score(0.2 + (pressure_signal * 0.12) + max(0.0, 0.16 - best_match * 0.18))
+        elif strong_matches or (moderate_matches and average_match >= 0.34):
+            status = "Unverified"
+            signal_score = calibrate_score(0.41 + (pressure_signal * 0.16) + max(0.0, 0.12 - average_match * 0.08))
         elif len(strong_matches) < 2:
             status = "Suspicious"
             signal_score = calibrate_score(0.52 + (pressure_signal * 0.20) + max(0.0, 0.16 - average_match * 0.1))
@@ -462,15 +639,26 @@ class TextDetector:
         )
 
         if status == "Authentic Signals":
-            explanation = (
-                "Live search found multiple relevant sources that independently confirm the extracted claim. "
-                + "The wording is comparatively restrained, so EDITH reports authentic signals."
-            )
+            if official_or_high_confidence_support and len(strong_matches) < 2:
+                explanation = (
+                    "Live search found a highly relevant trusted source that strongly supports the extracted claim. "
+                    + "The wording is comparatively restrained, so EDITH reports authentic signals."
+                )
+            else:
+                explanation = (
+                    "Live search found multiple relevant sources that independently confirm the extracted claim. "
+                    + "The wording is comparatively restrained, so EDITH reports authentic signals."
+                )
         elif status == "Unverified":
             if has_contradictions:
                 explanation = (
                     "EDITH found conflicting information across search results for this claim. "
                     + "Some sources contradict the claim, making verification inconclusive."
+                )
+            elif strong_matches or moderate_matches:
+                explanation = (
+                    "Live search found some relevant support for the extracted claim, but the corroboration is still incomplete. "
+                    + "EDITH reports this as unverified rather than suspicious."
                 )
             else:
                 explanation = (

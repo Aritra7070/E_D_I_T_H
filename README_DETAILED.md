@@ -1,202 +1,524 @@
 # EDITH - Multi-Modal Authenticity Analysis System
 
-**Complete Technical & Implementation Report**
+**Comprehensive Technical & Implementation Report**  
+*Complete analysis of algorithms, architectures, and approaches - Updated April 9, 2026*
 
 ---
 
 ## TABLE OF CONTENTS
 
 1. [Executive Summary](#executive-summary)
-2. [Project Overview](#project-overview)
-3. [Current Project State](#current-project-state)
-4. [System Architecture](#system-architecture)
-5. [Core Algorithms & Approaches](#core-algorithms--approaches)
-6. [Models & Datasets](#models--datasets)
-7. [Content Detection Pipeline](#content-detection-pipeline)
-8. [Detector Implementations](#detector-implementations)
-9. [Score Calibration System](#score-calibration-system)
-10. [Frontend Implementation](#frontend-implementation)
-11. [API Specifications](#api-specifications)
-12. [Explainability System](#explainability-system)
-13. [Performance Characteristics](#performance-characteristics)
-14. [Technical Stack](#technical-stack)
-15. [Setup Instructions](#setup-instructions)
-16. [Project Structure](#project-structure)
-17. [Key Design Decisions](#key-design-decisions)
+2. [System Architecture](#system-architecture)
+3. [Core Algorithms by Content Type](#core-algorithms-by-content-type)
+   - 3.1 [Text Detection](#text-detection)
+   - 3.2 [Image Detection](#image-detection)
+   - 3.3 [Video Detection](#video-detection)
+   - 3.4 [Audio Detection](#audio-detection)
+4. [Content Routing & Orchestration](#content-routing--orchestration)
+5. [Score Calibration & Decision Engine](#score-calibration--decision-engine)
+6. [Explainability Framework](#explainability-framework)
+7. [Frontend Implementation](#frontend-implementation)
+8. [Technical Stack](#technical-stack)
+9. [Project Structure](#project-structure)
+10. [API Specifications](#api-specifications)
+11. [Setup & Deployment](#setup--deployment)
+12. [Key Design Decisions](#key-design-decisions)
+13. [Performance & Limitations](#performance--limitations)
 
 ---
 
 ## EXECUTIVE SUMMARY
 
-EDITH is a **production-ready multi-modal authenticity analysis system** designed to detect manipulation and assess the authenticity of text, images, audio, and video content. The system employs a **modular detector architecture** with specialized algorithms for each content type, combining:
+EDITH is a **production-grade multi-modal authenticity analysis system** designed to detect manipulation across text, images, audio, and video content. The system combines:
 
-- **Hybrid ML approaches:** Pre-trained transformers + classical heuristics
-- **Computer vision techniques:** Blur detection, edge analysis, noise measurement  
-- **Linguistic analysis:** Claim extraction, emotional language detection, source verification
-- **Temporal analysis:** Scene change detection, frame consistency scoring, spectral anomaly detection
-- **Calibrated scoring system:** 0-1 scale with three confidence bands (Authentic Signals / Suspicious / Manipulated)
-- **Explainability framework:** Evidence-based reasoning with visual and textual explanations
+- **Modular ML architecture:** Specialized detectors for each content type
+- **Hybrid detection:** Pre-trained neural networks + interpretable heuristics
+- **Web-based verification:** Real-time fact-checking via DuckDuckGo for text
+- **Computer vision analysis:** Blur/noise/edge detection for images with CNN enhancement
+- **Temporal analysis:** Frame-by-frame deepfake detection + consistency checking for video
+- **Speech processing:** Whisper ASR + voice authentication + spectral analysis for audio
+- **Calibrated scoring:** 0-1 scale with three interpretation bands (Authentic / Suspicious / Manipulated)
+- **Explainability by design:** Content-type-specific evidence and visual annotations
 
-**Current Status:** MVP complete and running (as of April 9, 2026)  
-**Deployment:** Local development server (Backend: 8000, Frontend: 5173)  
-**Real-time Capability:** Both backend API and React frontend actively serving requests
-
----
-
-## PROJECT OVERVIEW
-
-### Purpose
-
-EDITH addresses the critical need for multi-modal content authenticity verification in an era of sophisticated deepfakes and misinformation. By analyzing the physical and linguistic characteristics of diverse content types, the system provides defensible authenticity assessments with clearly explained reasoning.
-
-### Core Problem Statement
-
-Modern disinformation campaigns exploit vulnerabilities across different media formats:
-- **Text:** Emotional language, unverified claims, clickbait patterns
-- **Images:** AI-generated or heavily edited visual content
-- **Video:** Deepfakes, frame-by-frame manipulation, temporal inconsistencies
-- **Audio:** Synthetic speech, vocoder artifacts, unnatural prosody
-
-EDITH unifies detection across these modalities into a single, interpretable framework.
-
-### Key Objectives
-
-✅ **Achieved:** Multi-modal content analysis (text, image, video, audio)  
-✅ **Achieved:** Calibrated 0-1 authenticity scale with thresholds  
-✅ **Achieved:** Visual explainability through heatmaps, spectrograms, annotations  
-✅ **Achieved:** REST API with CORS support for integration  
-✅ **Achieved:** React frontend for user interaction  
-✅ **Achieved:** Hybrid ML approach (CNN + heuristics)  
+**Current Status:** ✅ MVP Complete | Fully Operational (April 9, 2026)  
+**Live Services:** Backend API (http://localhost:8000) | Frontend UI (http://localhost:5173)  
+**Python Environment:** 3.12.3 with CPU/GPU support  
 
 ---
 
-## CORE ALGORITHMS & APPROACHES
+## SYSTEM ARCHITECTURE
 
-### 1. TEXT ANALYSIS PIPELINE
-
-**Model Backend:** DuckDuckGo Search (DDGS) + Linguistic Heuristics
-
-**Algorithm Steps:**
-
-| Step | Description | Technique | Purpose |
-|------|-------------|-----------|---------|
-| **Claim Extraction** | Identify core factual statement | Sentence scoring (word count, numbers, source verbs, capitalization) | Focus verification on key claim |
-| **Query Building** | Create search-friendly query | Tokenization + stopword removal | Prepare for source verification |
-| **Web Search** | Retrieve related articles | DuckDuckGo search API | Find corroborating evidence |
-| **Claim Coverage** | Verify claim appears in sources | Keyword intersection analysis | Measure substantiation level |
-| **Domain Trust** | Check source credibility | 15-domain whitelist (AP, BBC, Reuters, etc.) | Assess source reliability |
-| **Language Detection** | Flag manipulation patterns | Clickbait/emotional word dicts | Identify persuasion tactics |
-| **Score Aggregation** | Combine signals | Weighted averaging (40% coverage, 30% domain, 30% language) | Generate final authenticity score |
-
-**Key Heuristics:**
+### High-Level Data Flow
 
 ```
-Clickbait Words (↑ fake score): "shocking", "breaking", "secret", "leaked", "bombshell", "urgent", "coverup", "viral", "exclusive"
-Emotional Words (↑ fake score): "panic", "terrifying", "outrageous", "massive", "explosive", "stunning", "chaos", "crisis"
-Source Verbs (↔ authenticity): "said", "reported", "according", "confirmed", "announced"
-Domain Trust Scores: AP News 0.95 → Reuters 0.96 → NYT 0.87 → CNN 0.78
+User Input (File or Text)
+         ↓
+    [Content Router] ← Detects MIME type, file extension, content
+         ↓
+    [Modality Detector] ← Specialized ML/heuristic pipeline
+    (Text/Image/Video/Audio)
+         ↓
+  [DetectorResult] ← Raw scores, component analysis, evidence
+         ↓
+ [Decision Engine] ← Calibration, finalization, confidence adjustment
+         ↓
+[Explainability] ← Attach content-type-specific explanations
+         ↓
+  JSON Response ← Sent to client with visualizations
 ```
 
-**Output Confidence:** Calibrated 0.4–0.99 scale based on claim coverage + domain authority + language patterns
+### Component Overview
+
+| Component | Role | Input | Output |
+|-----------|------|-------|--------|
+| **content_router.py** | Detects content modality | filename, MIME type, text | "text" / "image" / "video" / "audio" |
+| **text_detector.py** | Linguistic + web verification | Text string | Score, highlights, sources, coverage |
+| **image_detector.py** | CNN + CV heuristics | Image file | Score, heatmap PNG, component scores |
+| **video_detector.py** | Frame analysis + temporal | Video file | Score, suspicious frames, consistency |
+| **audio_detector.py** | Voice auth + transcription | Audio file | Score, transcript, spectral data |
+| **decision_engine.py** | Final scoring calibration | DetectorResult | JSON response with thresholds |
+| **explainability.py** | Evidence attachment | JSON + modality | Full response with explanations |
 
 ---
 
-### 2. TEXT ANALYSIS (Linguistic & Web Verification)
+## CORE ALGORITHMS BY CONTENT TYPE
 
-**Backend:** DuckDuckGo Search + Claim Extraction + Source Credibility
+### TEXT DETECTION
+
+#### 1. **Claim Extraction Algorithm**
+
+Identifies the single most important factual statement in the text.
+
+**Scoring Function:**
+```
+claim_score(sentence) = 
+    (word_count × 0.03) +
+    (has_numbers? 0.25 : 0) +
+    (source_verb_count × 0.12) -
+    (uppercase_words_penalty × 0.06)
+    
+sentence_score = claim with maximum claim_score
+```
+
+**Rationale:** Important claims are typically:
+- Of moderate length (20-40 words)
+- Contain numerical specifics
+- Use attribution verbs ("said", "reported", "confirmed")
+- Avoid excessive capitalization (indicates shouting/bias)
+
+**Example:**
+```
+Input: "SHOCKING NEWS!!! The President said the economy grew 3.5% last quarter!"
+Extracted Claim: "The economy grew 3.5% last quarter"
+Score: High (numbers, attribution, moderate length)
+```
+
+#### 2. **Query Building for Web Search**
+
+Converts claim into an optimal search query.
 
 **Pipeline:**
-1. **Claim extraction** - Identify core verifiable sentence
-2. **Query building** - Tokenize & clean for search
-3. **Web search** - Retrieve source articles via DDGS
-4. **Claim coverage** - Check if sources mention the claim (keyword overlap %)
-5. **Domain trust** - Score sources against whitelist (AP 0.95, BBC 0.92, Reuters 0.96, etc.)
-6. **Language detection** - Flag clickbait/emotional words
-7. **Score aggregation** - Weighted combination (40% coverage, 30% domain, 30% language)
+1. **Tokenization:** Break claim into words, remove stopwords ("the", "a", "and", etc.)
+2. **Deduplication:** Keep unique tokens in order
+3. **Length cap:** Maximum 10 tokens or use full claim if ≤ 14 words
+4. **Output:** Search-optimized string
 
-**Output:** Text score, highlighted trigger words, coverage %, top sources
+**Example:**
+```
+Claim: "The unemployment rate in January 2024 was 3.7 percent"
+→ Tokens: ["unemployment", "rate", "january", "2024", "3.7", "percent"]
+→ Query: "unemployment rate january 2024 3.7 percent"
+```
+
+#### 3. **Web Search & Source Credibility**
+
+Uses DuckDuckGo Search API with rate-limit resilience.
+
+**Trusted Domain Scores:**
+```
+Reuters    0.96  (highest authority)
+AP News    0.95
+BBC        0.92  
+NPR        0.90
+NYT        0.87
+WSJ        0.87
+CNN        0.78  (lower than legacy media)
+Generic    0.45  (fallback for unknown domains)
+```
+
+**Search Resilience:**
+- Up to 3 retry attempts with 1.5s sleep between
+- Multiple query variations (full claim + shortened + entity-focused)
+- Graceful fallback if network unavailable
+
+#### 4. **Claim Coverage Scoring**
+
+Measures what percentage of the claim's keywords appear in search results.
+
+**Formula:**
+```
+coverage = (keywords_found_in_results) / (total_keywords)
+
+Examples:
+- Claim: "Trump won 2024 election"
+  Keywords: [trump, won, 2024, election]
+  Coverage: 2/4 = 0.50 (if only "trump" and "2024" found)
+  
+- Claim: "COVID-19 vaccines contain microchips"
+  Coverage: 0.05 (very low in credible sources)
+```
+
+#### 5. **Contradiction Detection**
+
+Flags if search results actively debunk or deny the claim.
+
+**Pattern Matching:**
+```
+Debunking phrases: "not true", "false", "fake", "debunked", 
+                   "misleading", "hoax", "fabricated", "no evidence"
+
+If ANY source contains these phrases + claim keywords:
+    → contradiction_flag = TRUE
+    → list contradicting sources
+```
+
+#### 6. **Language Pattern Detection**
+
+Identifies manipulation red flags through linguistic analysis.
+
+**Clickbait Words (↑ fake score 0.3 each):**
+```
+shocking, breaking, secret, leaked, bombshell, urgent, 
+coverup, viral, exclusive
+```
+
+**Emotional Words (↑ fake score 0.15 each):**
+```
+panic, terrifying, outrageous, massive, explosive, 
+stunning, chaos, crisis
+```
+
+**Example Highlighting:**
+```
+Text: "SHOCKING revelation: Trump's SECRET plan is EXPLOSIVE!"
+Highlights: 
+  - "SHOCKING" → Clickbait (+0.30)
+  - "SECRET" → Clickbait (+0.30)
+  - "EXPLOSIVE" → Emotional (+0.15)
+  
+Language penalty = 0.75 → contributes to higher fake_score
+```
+
+#### 7. **Final Text Score Calculation**
+
+**Components:**
+```
+coverage_score       = keyword coverage in sources (0.0-1.0)
+domain_trust_score   = average trust of top sources (0.45-0.96)
+language_penalty     = clickbait/emotional words detected (0.0-1.0)
+
+weighted_score = 
+    (coverage_score × 0.40) +
+    (domain_trust_score × 0.30) -
+    (language_penalty × 0.30)
+
+fake_score = calibrate_score(weighted_score)
+```
+
+**Calibration:** Clamps to [0.05, 0.95] to prevent overconfidence
+
+**Confidence:**
+```
+confidence = 0.40 + (coverage_score × 0.40) + (claim_clarity × 0.20)
+```
 
 ---
 
-### 3. IMAGE ANALYSIS (CNN + Computer Vision Heuristics)
+### IMAGE DETECTION
 
-**Primary Model:** `Medsa/ai-image-authenticity-detector` (PyTorch CNN)  
-**Fallback:** Laplacian blur + noise + edge detection
+#### Algorithm: CNN + Computer Vision Heuristics
 
-**Heuristic Signals:**
-- **Blur Signal** (40%): Laplacian variance → low variance = smooth AI output
-- **Noise Signal** (35%): Residual variance → low noise = processed image
-- **Edge Softness** (25%): Canny sharpness → soft edges = generation artifact
+**Two-Stage Approach:**
 
-**Hybrid Score:** 50% CNN + 50% heuristics
+##### Stage 1: Heuristic Features (Always Runs)
 
-**Heatmap:** Colorized overlay (65% blur map + 35% edge map) showing suspicious regions
+Analyzes pixel-level statistics for AI generation artifacts.
 
-**Output:** Score, heatmap PNG, component scores
+**Feature 1: Blur Detection (40% weight)**
+```
+laplacian_variance = variance of Laplacian edge filter
+blur_signal = 1 - (laplacian_variance / 1200.0) → clamp [0,1]
+
+Logic: AI-generated images often have smooth, blurry textures
+       Natural photos have sharp edges (high Laplacian variance)
+       
+Example:
+  Blurry image: var = 200 → blur_signal = 0.83 (suspicious)
+  Sharp photo:  var = 800 → blur_signal = 0.33 (authentic)
+```
+
+**Feature 2: Noise Measurement (35% weight)**
+```
+denoised = GaussianBlur(image, sigma=3.0)
+residual = original - denoised
+noise_variance = var(residual)
+low_noise_signal = 1 - (noise_variance / 140.0) → clamp [0,1]
+
+Logic: AI images often have artificial noise or no noise
+       Natural photos have consistent grain/sensor noise
+       
+Example:
+  AI-generated: var = 10  → low_noise_signal = 0.93 (suspicious)
+  Real photo:   var = 60  → low_noise_signal = 0.57 (neutral)
+```
+
+**Feature 3: Edge Softness (25% weight)**
+```
+edge_map = Canny(image, threshold1=80, threshold2=180)
+edge_density = mean(edge_map) / 255
+edge_softness = 1 - (edge_density × 3.0) → clamp [0,1]
+
+Logic: AI images have soft, processed edges
+       Natural photos have crisp, defined boundaries
+       
+Example:
+  AI image:  density = 0.02 → edge_softness = 0.94 (suspicious)
+  Real photo: density = 0.05 → edge_softness = 0.85 (neutral)
+```
+
+**Heuristic Score:**
+```
+heuristic_score = 
+    (blur_signal × 0.40) +
+    (low_noise_signal × 0.35) +
+    (edge_softness_signal × 0.25)
+```
+
+##### Stage 2: CNN Model Inference (If Available)
+
+Pre-trained on AI-generated vs authentic images.
+
+**Model:** `Medsa/ai-image-authenticity-detector` (PyTorch scripted model)
+
+**Inference:**
+```
+1. Resize image to 32×32 (model requirement)
+2. Normalize to [-1, +1] range
+3. Forward pass: logits = model(tensor)
+4. Apply sigmoid: raw_score = sigmoid(logits)
+5. Compare thresholds:
+   - If raw_score < 0.25: Use ensemble (0.9 × heuristic + 0.1 × raw)
+   - Else: Use raw model output directly
+```
+
+**Rationale:** 
+- Very low model scores are sometimes false positives
+- Blend with heuristics when model is uncertain
+- Trust model when confident (score > 0.25)
+
+##### Final Image Score
+
+```
+final_score = (cnn_score × 0.5) + (heuristic_score × 0.5)
+→ calibrate_score(final_score) → [0.05, 0.95]
+
+confidence = 0.64 + min(|final_score - 0.5|, 0.3) + 
+             (0.05 if cnn_available else 0.0)
+```
+
+#### Heatmap Generation
+
+Visualizes which pixels contribute most to the authenticity score.
+
+```
+heatmap = (blur_map × 0.65) + (edge_map × 0.35)
+
+Where:
+  blur_map = normalized Laplacian response per region
+  edge_map = morphological gradient
+  
+Color mapping:
+  Red zone:    0.7-1.0 (high manipulation probability)
+  Yellow zone: 0.4-0.7 (moderate suspicion)
+  Green zone:  0.0-0.4 (authentic-looking)
+
+Output: PNG with colorized overlay embedded as data URL
+```
 
 ---
 
-### 4. VIDEO ANALYSIS (Frame Scoring + Temporal Analysis)
+### VIDEO DETECTION
 
-**Primary Model:** `prithivMLmods/Deep-Fake-Detector-Model` (Vision Transformer)  
-**Fallback:** Per-frame heuristics
+#### Algorithm: Frame Sampling + Temporal Consistency
 
-**Pipeline:**
-1. **Frame extraction** - Sample 20 frames evenly across duration
-2. **Per-frame scoring** - ML model or heuristics (blur 40% + edges 35% + motion 25%)
-3. **Scene detection** - Flag abrupt cuts (frame diff > 0.25)
-4. **Temporal consistency** - Measure jitter (std_dev of frame diffs)
-5. **Video aggregation** - Average frame scores + temporal flags
+**Three-Stage Analysis:**
 
-**Output:** Per-frame scores, top 5 suspicious frames, scene changes, consistency metric
+##### Stage 1: Frame Extraction
+
+Samples frames evenly across video duration.
+
+```python
+total_frames = get_frame_count(video)
+sample_indices = linspace(0, total_frames-1, n_frames=20)
+# Extracts 20 evenly-spaced frames by default
+```
+
+**Rationale:** 20 frames captures major temporal variations without excessive computation
+
+##### Stage 2: Per-Frame Scoring
+
+Each frame scored independently using image heuristics or ML.
+
+```
+For each frame:
+  if ml_model_available:
+    score = ml_inference(frame)  # ViT or ResNet model
+  else:
+    score = heuristic_scoring(frame)
+    
+Per-frame scores: [s1, s2, s3, ..., s20]
+```
+
+**Heuristic Per-Frame Scoring:**
+```
+blur_signal = 1 - (laplacian_var / 400)
+edge_signal = 1 - (edge_density × 3)
+motion_signal = 1 - (sobel_magnitude / 50)
+
+frame_score = 
+    (blur_signal × 0.40) +
+    (edge_signal × 0.35) +
+    (motion_signal × 0.25)
+```
+
+##### Stage 3: Temporal Consistency Analysis
+
+Detects abrupt changes, scene cuts, and jitter.
+
+**Scene Change Detection:**
+```
+mean_diff = mean(|frame[i] - frame[i+1]|) / 255
+
+if mean_diff > threshold (0.25):
+    → Scene cut detected at frame i+1
+    
+Suspicious signals:
+  - Too many cuts (edited video)
+  - Cuts at face transitions (deepfake boundary)
+```
+
+**Temporal Jitter Scoring:**
+```
+frame_differences = [|score[i] - score[i+1]| for i in 1..N]
+jitter = std(frame_differences)
+
+Low jitter (≤0.05):   Smooth, authentic progression
+High jitter (>0.20):  Abrupt changes, suspicious
+```
+
+**Consistency Score:**
+```
+consistency = 1 - min(jitter / 0.5, 1.0)   # clamp to [0,1]
+↑ high consistency = authentic
+↓ low consistency = manipulated
+```
+
+##### Final Video Score
+
+```
+frame_scores_avg = mean(per_frame_scores)
+temporal_penalty = jitter_severity + scene_change_count × 0.1
+
+final_score = (frame_scores_avg × 0.85) + (temporal_penalty × 0.15)
+→ calibrate_score(final_score) → [0.05, 0.95]
+```
+
+#### Suspicious Frames Extraction
+
+Returns top 5 frames with highest manipulation scores for human review.
 
 ---
 
-### 5. AUDIO ANALYSIS (Voice Auth + Transcription)
+### AUDIO DETECTION
 
-**Stage 1 - Voice Authentication:**
-- **Model:** `mo-thecreator/deepfake-audio-detection-model` (Audio Transformer)
-- **Fallback:** Spectral heuristics (MFCC 40%, ZCR 35%, centroid 25%)
+#### Algorithm: Voice Auth + Transcription + Verification
 
-**Stage 2 - Transcription & Claim Verification:**
-- **Transcription:** `openai/whisper-small` (ASR)
-- **Claim check:** Route transcript through TextDetector
+**Three-Stage Pipeline:**
 
-**Stage 3 - Aggregation:**
-- Audio score = 70% voice + 30% text_claim
+##### Stage 1: Voice Authentication
 
-**Output:** Voice score, transcript, claim coverage, MFCC spectrogram
+Detects synthetic speech or voice manipulation.
+
+**Model:** `mo-thecreator/deepfake-audio-detection-model` (Audio Transformer)
+
+```
+Input: 16kHz mono audio WAV
+
+If ML model available:
+  voice_score = model_inference(audio)  # 0=authentic, 1=synthetic
+  
+Else (heuristic fallback):
+  Extract MFCC (Mel-Frequency Cepstral Coefficients)
+  Extract Zero-Crossing Rate (ZCR)
+  Extract Spectral Centroid
+  
+  voice_score = 
+    (mfcc_anomaly × 0.40) +
+    (zcr_inconsistency × 0.35) +
+    (centroid_shift × 0.25)
+```
+
+**Spectral Red Flags:**
+- Flat MFCC profile (indicates synthesis)
+- Abnormal ZCR distribution (unnatural voicing)
+- Spectral centroids outside natural human range
+
+##### Stage 2: Speech Transcription
+
+Converts audio to text for linguistic verification.
+
+**Model:** `openai/whisper-small` (ASR)
+
+```
+Handles:
+  - Multiple languages (transcribed to English if needed)
+  - Background noise (robust to accents, audio quality)
+  - Punctuation and capitalization
+
+Output: Transcribed text string
+```
+
+##### Stage 3: Claim Verification
+
+Routes transcribed text through TextDetector.
+
+```
+text_score = TextDetector.analyze(transcript)
+
+audio_score = 
+    (voice_score × 0.70) +
+    (text_score × 0.30)
+
+Final score combines voice authenticity + claim credibility
+```
+
+#### Spectrogram Visualization
+
+Highlights frequency anomalies.
+
+```
+spectrogram = librosa.feature.melspectrogram(audio)
+log_mel_spec = 10 × log(spectrogram + 1e-9)
+
+Anomaly Detection:
+  For each frequency band:
+    if power > mean + 2×std_dev:
+      → Mark as anomalous (potential editing)
+
+Output: Heatmapped spectrogram PNG
+```
+
 ---
-
-## EXPLAINABILITY FRAMEWORK  
-
-EDITH provides **interpretable results** through content-type-specific explanation modes:
-
-### Text Content
-- **Mode:** Claim-Evidence
-- **Explains:** Core claim extracted, search sources checked, credibility assessed
-- **Output:** Highlighted emotional/clickbait words, top 3 credible sources, coverage percentage
-
-### Image Content
-- **Mode:** Pattern-Inspection
-- **Explains:** Blur patterns, noise distribution, edge consistency
-- **Output:** Colorized heatmap (red = suspicious blur, blue = sharp texture)
-
-### Video Content
-- **Mode:** Frame-Markers
-- **Explains:** Per-frame authenticity scores, temporal inconsistencies
-- **Output:** Top 5 suspicious frames, scene change timeline
-
-### Audio Content
-- **Mode:** Frequency-Anomalies
-- **Explains:** Spectral patterns, voice characteristics, transcribed claim
-- **Output:** MFCC spectrogram, frequency anomaly highlights
-
----
-
-## TECHNICAL STACK & DEPENDENCIES
-
-### Backend
 
 | Package | Version | Role |
 |---------|---------|------|
