@@ -13,6 +13,28 @@ function loadImage(src) {
   });
 }
 
+function loadFirstAvailable(sources) {
+  return new Promise((resolve, reject) => {
+    let index = 0;
+
+    function tryNext() {
+      if (index >= sources.length) {
+        reject(new Error(`Failed to load frame from: ${sources.join(", ")}`));
+        return;
+      }
+
+      loadImage(sources[index])
+        .then(resolve)
+        .catch(() => {
+          index += 1;
+          tryNext();
+        });
+    }
+
+    tryNext();
+  });
+}
+
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
@@ -24,6 +46,7 @@ export default function HeroCanvas({ containerRef }) {
   const currentFrameRef = useRef(-1);
   const animationFrameRef = useRef(0);
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -44,15 +67,22 @@ export default function HeroCanvas({ containerRef }) {
 
     async function preloadFrames() {
       try {
-        const sources = Array.from({ length: FRAME_COUNT }, (_, index) => {
-          const frameNumber = String(index + 1).padStart(4, "0");
-          return `/assets/frames/frame_${frameNumber}.jpg`;
+        const frameRequests = Array.from({ length: FRAME_COUNT }, (_, index) => {
+          const paddedFour = String(index + 1).padStart(4, "0");
+          const paddedThree = String(index + 1).padStart(3, "0");
+
+          return loadFirstAvailable([
+            `/assets/frames/frame_${paddedFour}.jpg`,
+            `/assets/frames/ezgif-frame-${paddedThree}.jpg`,
+          ]);
         });
 
-        imagesRef.current = await Promise.all(sources.map((src) => loadImage(src)));
+        imagesRef.current = await Promise.all(frameRequests);
         setReady(true);
+        setLoadFailed(false);
         resizeCanvas();
       } catch (error) {
+        setLoadFailed(true);
         console.error("Frame preload failed", error);
       }
     }
@@ -155,5 +185,15 @@ export default function HeroCanvas({ containerRef }) {
     }
   });
 
-  return <canvas ref={canvasRef} className="hero-canvas" aria-hidden="true" />;
+  return (
+    <>
+      <canvas ref={canvasRef} className="hero-canvas" aria-hidden="true" />
+      {!ready && (
+        <div className="hero-loading-layer">
+          <div className="hero-loading-ring" />
+          <p>{loadFailed ? "EDITH visual stream unavailable" : "Initializing EDITH visual stream"}</p>
+        </div>
+      )}
+    </>
+  );
 }

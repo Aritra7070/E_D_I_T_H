@@ -73,7 +73,9 @@
     position: absolute;
     inset: 0;
     z-index: 10;
-    background: radial-gradient(circle, rgba(255, 0, 0, 0.15), rgba(0, 0, 0, 0.9));
+    background:
+      radial-gradient(circle at center, rgba(255, 45, 45, 0.22), rgba(0, 0, 0, 0.82) 68%),
+      linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.5));
     pointer-events: none;
   }
 
@@ -85,6 +87,41 @@
       radial-gradient(circle at center, transparent 0%, rgba(10, 10, 10, 0.18) 52%, rgba(10, 10, 10, 0.8) 100%),
       linear-gradient(180deg, rgba(10, 10, 10, 0.08), rgba(10, 10, 10, 0.44));
     pointer-events: none;
+  }
+
+  .hero-copy {
+    text-shadow:
+      0 0 24px rgba(255, 45, 45, 0.12),
+      0 6px 28px rgba(0, 0, 0, 0.55);
+  }
+
+  .hero-loading-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    background:
+      radial-gradient(circle at center, rgba(255, 45, 45, 0.1), rgba(5, 5, 5, 0.88) 68%),
+      rgba(5, 5, 5, 0.72);
+    color: rgba(255, 255, 255, 0.78);
+    font-family: var(--font-orbitron);
+    font-size: 0.8rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  .hero-loading-ring {
+    height: 3.5rem;
+    width: 3.5rem;
+    border-radius: 9999px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-top-color: rgba(255, 45, 45, 0.9);
+    animation: hero-spin 0.9s linear infinite;
+    box-shadow: 0 0 28px rgba(255, 45, 45, 0.18);
   }
 
   .eyebrow {
@@ -187,5 +224,11 @@
   .premium-red-button > span {
     position: relative;
     z-index: 1;
+  }
+}
+
+@keyframes hero-spin {
+  to {
+    transform: rotate(360deg);
   }
 }

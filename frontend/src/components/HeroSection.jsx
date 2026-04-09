@@ -18,15 +18,15 @@ export default function HeroSection({ onStartDetection }) {
           transition={{ duration: 0.7, ease: "easeOut" }}
           className="absolute inset-0 z-20 flex items-center justify-center px-6 text-center"
         >
-          <div className="max-w-4xl">
+          <div className="hero-copy max-w-4xl">
             <p className="eyebrow mx-auto">Enhanced Threat Interface</p>
             <h1 className="mt-5 font-orbitron text-6xl tracking-[0.28em] text-white sm:text-7xl lg:text-[7.4rem]">
               EDITH
             </h1>
-            <p className="mt-6 font-orbitron text-lg uppercase tracking-[0.18em] text-zinc-200 sm:text-xl">
+            <p className="mt-6 font-orbitron text-lg uppercase tracking-[0.18em] text-zinc-100 sm:text-xl">
               AI Multi-Modal Detection System
             </p>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-zinc-300/80">
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-zinc-200/90">
               Analyze text, image, video, and audio inputs through a cinematic explainable AI workflow.
             </p>
 
