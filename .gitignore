@@ -12,5 +12,3 @@ __pycache__/
 *.pyd
 frontend/node_modules/
 frontend/dist/
-.agent
-node_modules/
