@@ -1,6 +1,14 @@
-.venv/
 .env
+.venv/
+venv/
+env/
+ENV/
+backend/venv/
+backend/.venv/
 __pycache__/
+**/__pycache__/
 *.pyc
+*.pyo
+*.pyd
 frontend/node_modules/
 frontend/dist/
