@@ -1,4 +1,4 @@
-# EDITH - Multi-Modal Authenticity Analysis System
+# EDITH - Multi-Modal Authenticity Analysis System.
 ## **Comprehensive Technical Report & Algorithm Analysis**
 
 *Complete documentation of system design, algorithms, architectures, and implementation details*  
