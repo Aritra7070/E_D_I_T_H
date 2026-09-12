@@ -27,9 +27,10 @@ function percent(value) {
 
 function statusTone(status) {
   if (status === "Manipulated") return "manipulated";
-  if (status === "Unverified") return "unverified";
   if (status === "Suspicious") return "suspicious";
-  return "authentic";
+  if (status === "Unverified") return "unverified";
+  if (status === "Authentic Signals") return "authentic";
+  return "unverified";
 }
 
 function renderHighlightedText(text, highlights) {

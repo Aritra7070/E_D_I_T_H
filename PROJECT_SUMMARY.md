@@ -40,7 +40,7 @@ User Input → Content Router → Modality Detector → Decision Engine
 | Modality | Primary Approach | Fallback | Key Features |
 |----------|---|---|---|
 | **Text** | DuckDuckGo web search + claim extraction | N/A (heuristics only) | Coverage scoring, domain trust (AP 0.95, Reuters 0.96), emotional language detection |
-| **Image** | CNN model `Medsa/ai-authenticity-detector` + CV | Laplacian blur + noise + edges | Heatmap visualization, 50/50 ML/heuristics blend |
+| **Image** | CNN model `Medsa/ai-image-authenticity-detector` + CV | Laplacian blur + noise + edges | Heatmap visualization, 50/50 ML/heuristics blend |
 | **Video** | Frame-by-frame scoring + temporal analysis | Per-frame heuristics | Scene cut detection, jitter analysis, suspicious frame extraction |
 | **Audio** | Whisper ASR + voice auth model | MFCC/ZCR/centroid features | Spectrogram visualization, claim verification via text pipeline |
 

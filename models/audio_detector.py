@@ -426,7 +426,7 @@ class AudioDetector:
                 details={
                     "error": error_msg,
                     "model_backend": "error",
-                    "status_override": "error",
+                    "status_override": "Unverified",
                     "reason_labels": [
                         "Audio processing failed",
                         "Check FFmpeg installation: https://ffmpeg.org/download.html",
@@ -537,7 +537,7 @@ class AudioDetector:
             print(f"[AudioDetector] Analysis complete")
             
             model_backend = f"voice:{voice_method} + whisper-small + TextDetector (DDGS)"
-            
+
             # Build details dictionary for frontend
             details = {
                 "model_backend": model_backend,
@@ -548,6 +548,9 @@ class AudioDetector:
                 "voice_authenticity_score": voice_score,
                 "voice_detection_method": voice_method,
             }
+            if text_result:
+                details["claim_verification_score"] = text_result.fake_score
+                details["claim_verification_status"] = text_result.details.get("status_override", "Suspicious")
             
             return DetectorResult(
                 fake_score=final_score,
